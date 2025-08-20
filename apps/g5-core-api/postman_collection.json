@@ -1,0 +1,65 @@
+{
+  "info": {
+    "name": "G5 Core API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Collection for core multi-tenant API"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001/v1" },
+    { "key": "tenantId", "value": "" },
+    { "key": "jwt", "value": "" },
+    { "key": "apiKey", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/health" }
+    },
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"tenantSlug\": \"demo\",\n  \"email\": \"user@example.com\",\n  \"password\": \"Secret123!\"\n}" },
+        "url": "{{baseUrl}}/auth/register"
+      }
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"tenantSlug\": \"demo\",\n  \"email\": \"user@example.com\",\n  \"password\": \"Secret123!\"\n}" },
+        "url": "{{baseUrl}}/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "if(json.accessToken){ pm.environment.set('jwt', json.accessToken); }",
+              "if(json.user && json.user.tenantId){ pm.environment.set('tenantId', json.user.tenantId); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "List Projects",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{jwt}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "url": "{{baseUrl}}/projects"
+      }
+    },
+    {
+      "name": "Metrics",
+      "request": { "method": "GET", "url": "http://localhost:3001/metrics" }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: g5_user
+          POSTGRES_PASSWORD: g5_pass
+          POSTGRES_DB: g5_db
+        ports: [ '5432:5432' ]
+        options: >-
+          --health-cmd="pg_isready -U g5_user -d g5_db" --health-interval=5s --health-timeout=5s --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports: [ '6379:6379' ]
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: g5_user
+      DB_PASS: g5_pass
+      DB_NAME: g5_db
+      JWT_SECRET: test_jwt_secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Build core api
+        run: pnpm -F g5-core-api build
+      - name: Run migrations
+        run: pnpm -F g5-core-api exec ts-node src/migrate-run.ts
+        working-directory: apps/g5-core-api
+      - name: Run tests
+        run: pnpm -F g5-core-api test -- --runInBand
+      - name: Check pending migrations
+        run: pnpm -F g5-core-api exec ts-node scripts/check-pending-migrations.ts
+        working-directory: apps/g5-core-api
+      - name: Generate artifacts (OpenAPI/Postman/client)
+        run: pnpm -F g5-core-api artifacts:runtime || true
+        working-directory: apps/g5-core-api
+      - name: Verify artifacts
+        run: pnpm -F g5-core-api check:artifacts
+        working-directory: apps/g5-core-api

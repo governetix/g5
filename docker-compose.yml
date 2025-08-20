@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: g5_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: g5_user
+      POSTGRES_PASSWORD: g5_pass
+      POSTGRES_DB: g5_db
+    ports:
+      - "55432:5432"
+    volumes:
+      - g5_pgdata_v2:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: g5_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/g5-core-api/Dockerfile
+    container_name: g5_core_api
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: g5_user
+      DB_PASS: g5_pass
+      DB_NAME: g5_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: dev_jwt_secret_12345
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "3001:3001"
+
+volumes:
+  g5_pgdata_v2:

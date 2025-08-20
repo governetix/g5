@@ -1,0 +1,189 @@
+## G5 Core API
+
+Production-oriented multi-tenant SaaS core service built with NestJS. Focused on correctness, observability, security, and operational resilience.
+
+### Feature Overview
+- Multi-tenancy via header `X-Tenant-Id` & per-entity `tenantId`
+- Auth: Access (short TTL) + rotating refresh tokens (stored hashed) + session listing & revocation
+- Password reset & invitation skeletons (tokens hashed / invalidated)
+- RBAC: Roles (OWNER, ADMIN, EDITOR, VIEWER) with guard + decorator
+- API Keys: SHA-256 hash at rest, batch rotate/revoke, metadata update, usage tracking placeholder
+- Audit Logging: Interceptor persists standardized audit records; domain events decouple side-effects
+- Domain Events: Internal event bus feeding audit & future outbox/webhooks
+- Webhooks: CRUD, HMAC-SHA256 signatures + timestamp anti-replay, queued delivery (BullMQ), exponential backoff, circuit breaker, DLQ + replay endpoint
+- Idempotency: Interceptor using `Idempotency-Key` header with persisted responses to prevent duplicate side effects
+- Cursor Pagination: Base64URL encoded cursors, stable ordering (id + createdAt fallback if needed)
+- Error Catalog: Centralized codes, consistent `{code,message,details,traceId}` envelope via global exception filter
+- Correlation IDs: Middleware + AsyncLocalStorage, auto injected into logs & error responses
+- Observability: OpenTelemetry (HTTP, PG, Redis) optional bootstrap; Prometheus metrics endpoint
+- Rate Limiting: Tenant-level Redis sliding window guard (configurable)
+- Backups: Daily `pg_dump` with retention pruning
+- Alerts: Scheduled monitoring (e.g. DLQ size) -> structured log events
+- Retention Jobs: Scheduled cleanup (old audit logs, revoked tokens/keys, expired reset tokens)
+- Config Validation: Joi schema + production environment safety checks
+- Security: Helmet (CSP/HSTS/COOP/COEP), optional CSP disable, header hardening, removal of x-powered-by
+- API Versioning: `/v1` prefix; future strategy for deprecations
+- Swagger: Global headers, auth schemes, error models, pagination & idempotency header docs
+- DB Hardening: Extensions, composite/partial indexes, constraints, hashed secrets
+
+### Tech Stack
+NestJS 11, TypeORM (PostgreSQL), Redis / BullMQ, prom-client, OpenTelemetry, bcrypt, JWT, helmet, pino.
+
+### Environment Variables (Core Subset)
+| Variable | Description | Example |
+|----------|-------------|---------|
+| NODE_ENV | Environment (`development`/`production`)| development |
+| PORT | HTTP port | 3001 |
+| DB_HOST | PostgreSQL host | 127.0.0.1 |
+| DB_PORT | PostgreSQL port | 5432 |
+| DB_USER | DB user | g5_user |
+| DB_PASS | DB password | g5_pass |
+| DB_NAME | Database name | g5_db |
+| JWT_SECRET | JWT signing secret | change_me |
+| ACCESS_TOKEN_TTL | Access token TTL (s) | 900 |
+| REFRESH_TOKEN_TTL | Refresh token TTL (s) | 2592000 |
+| REDIS_HOST | Redis host | 127.0.0.1 |
+| REDIS_PORT | Redis port | 6379 |
+| ALLOWED_ORIGINS | Comma list for CORS | http://localhost:3000 |
+| ENABLE_HSTS | Enable HSTS header | true |
+| ENABLE_COOP | Enable COOP | false |
+| ENABLE_COEP | Enable COEP | false |
+| DISABLE_CSP | Disable CSP entirely | false |
+| CSP_DEFAULT | Override CSP directives | default-src 'self' |
+| OTEL_EXPORTER_OTLP_ENDPOINT | OTLP endpoint (if tracing) | http://otel:4318 |
+| ENABLE_BACKUPS | Enable backup cron | true |
+| BACKUP_RETENTION_DAYS | Backups retention | 7 |
+| RATE_LIMIT_WINDOW_SEC | Sliding window size | 60 |
+| RATE_LIMIT_MAX | Requests per window per tenant | 1200 |
+| IDP_ENABLED | (Future) external IdP toggle | false |
+
+Additional internal variables are validated through the centralized Joi schema; startup fails fast if invalid.
+
+### Local Run
+```bash
+pnpm install
+docker compose up -d postgres redis
+pnpm -F g5-core-api exec ts-node src/migrate-run.ts
+pnpm -F g5-core-api seed
+pnpm -F g5-core-api start:dev
+```
+Docs: http://localhost:3001/docs  
+Health: http://localhost:3001/v1/health  
+Metrics: http://localhost:3001/metrics
+
+### Seeding
+Creates demo tenant, owner user, project, asset, and API key (printed once). Store printed key securely.
+
+### Auth & Sessions
+1. Register (needs existing tenant slug) -> returns user
+2. Login -> access & refresh tokens
+3. Refresh -> rotates token
+4. Session Listing: Enumerate active refresh sessions (device binding placeholder)
+5. Session Revoke: Targeted or bulk invalidation
+6. Logout / revoke (refresh token removal)
+
+Passwords & refresh tokens are stored hashed; refresh rotation invalidates previous token atomically.
+
+### API Keys
+- Raw only on creation (seed / create) or rotation response
+- SHA-256 hashed at rest; prefix strategy for UX safe display (future)
+- Soft revoke via `revokedAt`; filtered from active queries
+- Batch operations: rotate, revoke (bulk administrative actions)
+- Metadata update endpoint (name / description) without revealing secret
+- Planned: Per-key usage statistics & last-used timestamps
+
+### Webhooks Reliability & Security
+- Delivery Queue: BullMQ with exponential / capped backoff
+- HMAC Signatures: `X-Webhook-Signature` (sha256=base64) + `X-Webhook-Timestamp`
+- Anti-Replay: Rejects stale (config window) or replayed timestamp/signature combos
+- Circuit Breaker: Tracks `failureCount`, opens circuit after threshold; cooldown before reattempt
+- DLQ: Messages exceeding retries moved to Dead Letter Queue; replay endpoint to re-enqueue
+- Pagination: Cursor-based listing of webhooks & delivery attempts (future)
+- Metrics: Success, failure, retry counters & latency histogram
+- Planned: Outbox pattern integration & per-tenant delivery concurrency controls
+
+Signature Base String: `timestamp + '.' + payloadJSON` -> HMAC SHA-256 with tenant secret.
+
+### Metrics & Tracing
+- Prometheus endpoint `/metrics`
+- Standard Counters / Histograms: HTTP request count & duration, webhook deliveries/failures/retries, rate limit rejections
+- OpenTelemetry (conditional): HTTP, PostgreSQL, Redis auto-instrumented; exporter activated if env present
+- Correlation IDs propagate as span attributes & log fields
+
+Enable tracing by setting `OTEL_EXPORTER_OTLP_ENDPOINT`; absence results in zero overhead bootstrap skip.
+
+### Migrations & Schema Hardening
+Run automatically at startup. Manual:
+```bash
+pnpm -F g5-core-api exec ts-node src/migrate-run.ts
+```
+Pending migration CI check: `scripts/check-pending-migrations.ts`.
+
+### Testing
+```bash
+pnpm -F g5-core-api test
+```
+Additional guard/webhook tests in progress.
+
+### CI / Quality Gates
+GitHub Actions: install -> build -> migrate -> test -> pending migration check.
+
+### Postman / API Exploration
+Import `postman_collection.json`. Set: `baseUrl`, `tenantId`, `jwt`, `apiKey` after login.
+
+### Security Notes
+- CSP enabled unless disabled by env
+- Optional HSTS/COOP/COEP toggles
+- Rate limits per bucket
+- All tokens/secrets hashed (except one-time display)
+
+### Cursor Pagination
+Use `?limit=20&cursor=...` pattern. Response includes `nextCursor` when more records exist. Cursor encodes JSON `{"id":"...","createdAt":"..."}` base64url. Stable ordering avoids duplicates / gaps.
+
+### Idempotency
+Supply `Idempotency-Key` header (unique client generated). Successful mutating responses cached keyed by (tenant, route, key, body hash). Replays return cached payload with `Idempotent-Replay: true` header.
+
+### Correlation IDs
+`X-Correlation-Id` client provided or generated UUID v4 per request. Propagated through AsyncLocalStorage; added to logs, error responses (`traceId`), and metrics labels.
+
+### Standardized Errors
+Envelope: `{ code, message, details?, traceId }`. `code` drawn from catalog (e.g. `AUTH_INVALID_CREDENTIALS`, `RATE_LIMIT_EXCEEDED`, `WEBHOOK_CIRCUIT_OPEN`). Non-whitelisted exceptions are mapped to `INTERNAL_ERROR` while preserving `traceId`.
+
+### Backups & Retention
+- Daily backup job (cron) executes `pg_dump` to configured path (future env). Maintains sliding retention window, deleting oldest beyond `BACKUP_RETENTION_DAYS`.
+- Retention cleanup purges: old audit logs (threshold), revoked API keys past grace, expired refresh & password reset tokens.
+
+### Alerting
+Scheduled job inspects DLQ size & other health indicators; emits structured logs (future: integrate with external alerting).
+
+### Rate Limiting
+Redis sliding window keyed per tenant. Exceeding threshold returns `429` with error code `RATE_LIMIT_EXCEEDED`. Possible extension: per-key + global + adaptive burst tokens.
+
+### Config Validation & Safety
+Startup validates environment with Joi; missing or malformed required vars abort boot (fail fast). In production, presence of local `.env` may be rejected (guard against misconfiguration).
+
+### Logging
+`pino` used with correlation enrichment. Sensitive fields (passwords, tokens) excluded or truncated (ensure any new fields follow redaction guidelines).
+
+### Development Workflow Tips
+- Run `pnpm -F g5-core-api start:dev` for watch mode
+- Use `pnpm -F g5-core-api lint` before commits
+- Add migrations via script; never edit committed migrations retroactively
+- Prefer service-level unit tests + selective e2e flows for critical paths
+
+### Future Enhancements
+- Outbox pattern bridging domain events to durable webhook dispatch
+- Fine-grained per-tenant rate plan quotas & burst credits
+- Key usage analytics & anomaly detection
+- Webhook delivery signature rotation support
+- Structured audit diffing & masking
+- Multi-region active-active replication guidelines
+- Secret rotation automation (JWT, HMAC)
+- Policy-based access control (attribute rules)
+- Pluggable encryption at field level (PII vault abstraction)
+
+### License
+UNLICENSED (internal use).
+
+---
+For questions or extension proposals, open an internal issue with context: feature intent, tenancy impact, security considerations, metrics/observability plan.
