@@ -5,18 +5,22 @@ This directory hosts deep-dive technical docs for backend modules and how the Ad
 ## Completed Docs
 - RBAC & Permissions (`RBAC.md`)
 - Error Handling (`Errors.md`)
+- Authentication & Sessions (`AuthSessions.md`)
+- Multi-Tenancy & Tenant Resolution (`MultiTenancy.md`)
+- API Keys Lifecycle (`ApiKeys.md`)
+- Webhooks Delivery Pipeline (`Webhooks.md`)
+- Audit Logging & Domain Events (`AuditEvents.md`)
+- Metrics & Observability (`Observability.md`)
+- Rate Limiting & Idempotency (`RateIdempotency.md`)
+- Backups & Restore Runbook (`Backups.md`)
+- Alerting System (`Alerting.md`)
+- Queue & Jobs Architecture (`JobsQueues.md`)
+- SDK Generation & Client Integration (`SDK.md`)
 
-## Planned Docs
-- Authentication & Sessions
-- Multi-Tenancy & Tenant Resolution
-- API Keys Lifecycle
-- Webhooks Delivery Pipeline
-- Audit Logging & Domain Events
-- Metrics & Observability (Prometheus + OTEL)
-- Rate Limiting & Idempotency
-- Backups & Restore Runbook
-- Alerting System
-- Queue & Jobs Architecture
-- SDK Generation & Client Integration
+## Next Candidates / Future Docs
+- Feature Flags & Configuration Strategy
+- Super-Admin Global Access Model
+- Data Retention & Purging Policies
+- Performance Tuning Playbook (Indexes, Query Plans)
 
 Add new docs incrementally; keep each file self-contained.
