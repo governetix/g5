@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Counter, Histogram, Registry } from 'prom-client';
+import { Counter, Histogram, Registry, Gauge } from 'prom-client';
 
 @Injectable()
 export class MetricsService {
@@ -9,6 +9,10 @@ export class MetricsService {
   readonly webhookDeliveries: Counter;
   readonly webhookFailures: Counter;
   readonly webhookRetries: Counter;
+  readonly http4xxCounter: Counter;
+  readonly http5xxCounter: Counter;
+  readonly dlqSizeGauge: Gauge;
+  readonly webhookDuration: Histogram;
 
   constructor() {
     this.httpRequestCounter = new Counter({
@@ -40,6 +44,30 @@ export class MetricsService {
       name: 'webhook_retries_total',
       help: 'Webhook retry attempts (after first)',
       labelNames: ['event'],
+      registers: [this.registry],
+    });
+    this.http4xxCounter = new Counter({
+      name: 'http_4xx_total',
+      help: 'Total HTTP responses 4xx',
+      labelNames: ['route'],
+      registers: [this.registry],
+    });
+    this.http5xxCounter = new Counter({
+      name: 'http_5xx_total',
+      help: 'Total HTTP responses 5xx',
+      labelNames: ['route'],
+      registers: [this.registry],
+    });
+    this.dlqSizeGauge = new Gauge({
+      name: 'webhooks_dlq_size',
+      help: 'Current DLQ size (jobs waiting + failed + delayed)',
+      registers: [this.registry],
+    });
+    this.webhookDuration = new Histogram({
+      name: 'webhook_delivery_duration_seconds',
+      help: 'Webhook delivery attempt duration seconds',
+      buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+      labelNames: ['event', 'status'],
       registers: [this.registry],
     });
   }

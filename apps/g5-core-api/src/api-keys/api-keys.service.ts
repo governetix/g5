@@ -8,19 +8,35 @@ import { AuditLog } from '../entities/auditlog.entity';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { AuditActions } from '../audit/audit-actions';
 import * as crypto from 'crypto';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ApiKeysService {
+  private pepper?: string;
+  private hmacKey?: Buffer;
   constructor(
     @InjectRepository(ApiKey) private repo: Repository<ApiKey>,
     @InjectRepository(AuditLog) private auditRepo: Repository<AuditLog>,
-  ) {}
+    private cfg: ConfigService,
+  ) {
+    this.pepper = this.cfg.get<string>('API_KEY_PEPPER') || undefined;
+    const hmacSecret = this.cfg.get<string>('API_KEY_HMAC_SECRET');
+    if (hmacSecret) this.hmacKey = Buffer.from(hmacSecret, 'utf8');
+  }
+
+  private hashKey(raw: string) {
+    const material = this.pepper ? raw + this.pepper : raw;
+    if (this.hmacKey) {
+      return crypto.createHmac('sha256', this.hmacKey).update(material).digest('hex');
+    }
+    return crypto.createHash('sha256').update(material).digest('hex');
+  }
 
   async create(tenantId: string, dto: CreateApiKeyDto) {
     const exists = await this.repo.findOne({ where: { tenantId, name: dto.name } });
     if (exists) throw new ConflictException('Name already used');
     const raw = 'gk_' + crypto.randomBytes(24).toString('base64url');
-    const keyHash = crypto.createHash('sha256').update(raw).digest('hex');
+  const keyHash = this.hashKey(raw);
     const entity = this.repo.create({ tenantId, name: dto.name, keyHash });
     await this.repo.save(entity);
     const audit = this.auditRepo.create({
@@ -56,7 +72,7 @@ export class ApiKeysService {
     await this.repo.save(old);
     // Create new with same name suffix or increment
     const raw = 'gk_' + crypto.randomBytes(24).toString('base64url');
-    const keyHash = crypto.createHash('sha256').update(raw).digest('hex');
+  const keyHash = this.hashKey(raw);
     const newKey = this.repo.create({ tenantId, name: old.name, keyHash });
     await this.repo.save(newKey);
     const audit = this.auditRepo.create({

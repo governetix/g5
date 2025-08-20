@@ -31,6 +31,8 @@ export class MetricsHttpInterceptor implements NestInterceptor {
         const seconds = elapsedNs / 1e9;
         this.metrics.httpRequestCounter.inc({ method, route, status });
         this.metrics.httpDuration.observe({ method, route, status }, seconds);
+  if (status >= 400 && status < 500) this.metrics.http4xxCounter.inc({ route });
+  else if (status >= 500) this.metrics.http5xxCounter.inc({ route });
       }),
     );
   }

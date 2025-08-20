@@ -29,6 +29,8 @@ export class WebhookDispatcher extends WorkerHost {
 
   async process(job: Job<WebhookJobData>): Promise<{ delivered: boolean } | void> {
     const { webhookId, tenantId, event, body, timestamp, signature } = job.data;
+  const start = process.hrtime.bigint();
+  let statusLabel = 'success';
     const hook = await this.repo.findOne({ where: { id: webhookId, tenantId } });
     if (!hook || !hook.isActive) return;
     // If circuit open but cooldown passed, auto-reactivate
@@ -63,6 +65,7 @@ export class WebhookDispatcher extends WorkerHost {
         throw new Error('HTTP ' + res.status);
       }
     } catch (err) {
+  statusLabel = 'failure';
       hook.failureCount += 1;
       await this.repo.save(hook);
       await this.audit.log({
@@ -114,6 +117,8 @@ export class WebhookDispatcher extends WorkerHost {
       await this.repo.save(hook);
     }
     this.metrics.webhookDeliveries.inc({ event });
+  const elapsed = Number(process.hrtime.bigint() - start) / 1e9;
+  this.metrics.webhookDuration.observe({ event, status: statusLabel }, elapsed);
     return { delivered: true };
   }
 

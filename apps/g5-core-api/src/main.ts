@@ -19,6 +19,7 @@ import type { Express } from 'express';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet, { HelmetOptions } from 'helmet';
+import express from 'express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ensureGlobalTenantHeader, ensureStandardErrorSchema } from './swagger/swagger-util';
 import { CorrelationMiddleware } from './common/correlation/correlation.middleware';
@@ -44,6 +45,10 @@ async function bootstrap() {
     process.exit(1);
   }
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Body size limit (default 1mb) configurable via BODY_LIMIT
+  const bodyLimit = process.env.BODY_LIMIT || '1mb';
+  app.use(express.json({ limit: bodyLimit }));
+  app.use(express.urlencoded({ limit: bodyLimit, extended: true }));
   // LoggerModule provides a logger automatically; register correlation middleware early
   const corr = new CorrelationMiddleware();
   app.use((req: Request & { correlationId?: string }, res: Response, next: NextFunction) =>

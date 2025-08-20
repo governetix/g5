@@ -63,7 +63,7 @@ export class BackupService implements OnModuleInit {
   private applyRetention() {
     const files = fs
       .readdirSync(this.dir)
-      .filter((f) => f.startsWith('backup-') && f.endsWith('.sql'));
+      .filter((f) => f.startsWith('backup-') && (f.endsWith('.sql') || f.endsWith('.sql.enc')));
     const cutoff = Date.now() - this.retentionDays * 86400000;
     for (const f of files) {
       const full = path.join(this.dir, f);
@@ -73,5 +73,26 @@ export class BackupService implements OnModuleInit {
         this.logger.log(`Deleted old backup ${f}`);
       }
     }
+  }
+  // Basic restore helper (manual invocation) - decrypts if needed.
+  async restore(fileName: string) {
+    const host = this.cfg.get<string>('DB_HOST');
+    const port = this.cfg.get<string>('DB_PORT');
+    const db = this.cfg.get<string>('DB_NAME');
+    const user = this.cfg.get<string>('DB_USER');
+    const pass = this.cfg.get<string>('DB_PASS');
+    const full = path.resolve(this.dir, fileName);
+    if (!fs.existsSync(full)) throw new Error('Backup file not found');
+    let sqlFile = full;
+    if (full.endsWith('.enc')) {
+      if (!this.encryptPassphrase) throw new Error('Passphrase required to decrypt');
+      const decrypted = full.replace(/\.enc$/, '');
+      const decCmd = `openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:${this.encryptPassphrase} -in "${full}" -out "${decrypted}"`;
+      await pexec(decCmd, { shell: 'pwsh.exe' });
+      sqlFile = decrypted;
+    }
+    const cmd = `set PGPASSWORD="${pass}" && psql -h ${host} -p ${port} -U ${user} -d ${db} -f "${sqlFile}"`;
+    await pexec(cmd, { shell: 'pwsh.exe' });
+    this.logger.log(`Restore completed from ${fileName}`);
   }
 }

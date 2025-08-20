@@ -1,0 +1,25 @@
+{
+  "name": "@g5/sdk",
+  "version": "0.1.0",
+  "description": "G5 Core API TypeScript SDK (generated OpenAPI types + lightweight client)",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "pnpm build"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "peerDependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "license": "UNLICENSED"
+}

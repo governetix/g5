@@ -40,6 +40,7 @@ NestJS 11, TypeORM (PostgreSQL), Redis / BullMQ, prom-client, OpenTelemetry, bcr
 | DB_PASS | DB password | g5_pass |
 | DB_NAME | Database name | g5_db |
 | JWT_SECRET | JWT signing secret | change_me |
+| JWT_KEYS | JSON array for multi-key rotation [{"kid":"k1","secret":"...","current":true}] | (unset) |
 | ACCESS_TOKEN_TTL | Access token TTL (s) | 900 |
 | REFRESH_TOKEN_TTL | Refresh token TTL (s) | 2592000 |
 | REDIS_HOST | Redis host | 127.0.0.1 |
@@ -53,9 +54,21 @@ NestJS 11, TypeORM (PostgreSQL), Redis / BullMQ, prom-client, OpenTelemetry, bcr
 | OTEL_EXPORTER_OTLP_ENDPOINT | OTLP endpoint (if tracing) | http://otel:4318 |
 | ENABLE_BACKUPS | Enable backup cron | true |
 | BACKUP_RETENTION_DAYS | Backups retention | 7 |
+| BACKUP_DIR | Backup output directory | ./backups |
+| BACKUP_ENCRYPT_PASSPHRASE | If set, AES-256 encrypt backups | (unset) |
+| BACKUP_TEST_DUMMY | Write dummy file instead of pg_dump (tests) | false |
 | RATE_LIMIT_WINDOW_SEC | Sliding window size | 60 |
 | RATE_LIMIT_MAX | Requests per window per tenant | 1200 |
 | IDP_ENABLED | (Future) external IdP toggle | false |
+| BODY_LIMIT | Express JSON/body size limit | 1mb |
+| ALERT_DLQ_THRESHOLD | DLQ size alert threshold | 50 |
+| ALERT_ERROR_RATE_5M | 5m rolling 5xx fraction threshold | 0.05 |
+| ALERT_P95_LATENCY | P95 latency seconds threshold | 0.75 |
+| ALERT_P99_LATENCY | P99 latency seconds threshold | 1.5 |
+| ALERTS_SLACK_WEBHOOK | Slack Incoming Webhook URL | (unset) |
+| ALERTS_COOLDOWN_SEC | Min seconds between repeated same alert | 300 |
+| API_KEY_PEPPER | Extra server-side static pepper appended before hashing | (unset) |
+| API_KEY_HMAC_SECRET | If set, use HMAC-SHA256 instead of plain hash | (unset) |
 
 Additional internal variables are validated through the centralized Joi schema; startup fails fast if invalid.
 
@@ -106,11 +119,17 @@ Signature Base String: `timestamp + '.' + payloadJSON` -> HMAC SHA-256 with tena
 
 ### Metrics & Tracing
 - Prometheus endpoint `/metrics`
-- Standard Counters / Histograms: HTTP request count & duration, webhook deliveries/failures/retries, rate limit rejections
+- Standard Counters / Histograms: HTTP request count & duration (+ 4xx/5xx counters), webhook deliveries/failures/retries/duration histogram, DLQ size gauge, rate limit rejections
 - OpenTelemetry (conditional): HTTP, PostgreSQL, Redis auto-instrumented; exporter activated if env present
 - Correlation IDs propagate as span attributes & log fields
 
 Enable tracing by setting `OTEL_EXPORTER_OTLP_ENDPOINT`; absence results in zero overhead bootstrap skip.
+Example minimal tracing env:
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_SERVICE_NAME=g5-core-api
+```
+To disable quickly: set `OTEL_DISABLED=true`.
 
 ### Migrations & Schema Hardening
 Run automatically at startup. Manual:
@@ -118,6 +137,25 @@ Run automatically at startup. Manual:
 pnpm -F g5-core-api exec ts-node src/migrate-run.ts
 ```
 Pending migration CI check: `scripts/check-pending-migrations.ts`.
+
+Rollback / Undo:
+```bash
+# Revert latest migration
+pnpm -F g5-core-api migration:down
+
+# Revert last 2
+pnpm -F g5-core-api migration:down 2
+
+# Revert all (danger - wipes schema objects created by migrations)
+pnpm -F g5-core-api migration:down all
+
+# Revert down to (and including) a migration whose name contains substring
+pnpm -F g5-core-api migration:down to 1709999
+```
+Guidelines:
+- Never modify an already committed migration; create a new one to adjust schema.
+- Prefer additive migrations; destructive changes should be paired with a backup and documented.
+- Rollbacks in production should be exceptional; validate on staging first.
 
 ### Testing
 ```bash
@@ -136,6 +174,9 @@ Import `postman_collection.json`. Set: `baseUrl`, `tenantId`, `jwt`, `apiKey` af
 - Optional HSTS/COOP/COEP toggles
 - Rate limits per bucket
 - All tokens/secrets hashed (except one-time display)
+- JWT key rotation: supply `JWT_KEYS` env JSON array objects `{kid,secret,current?}`; `current:true` marks active signing key, others accepted for verification. Fallback to `JWT_SECRET` if absent.
+- API keys hashed with optional pepper (`API_KEY_PEPPER`) or HMAC (`API_KEY_HMAC_SECRET`). Rotate by introducing new pepper/HMAC secret and re-hashing only on key rotation events (existing hashes remain valid until forced rotation policy).
+- Production: avoid shipping a `.env` file; inject secrets via orchestrator. Add CI policy to fail if `.env` present in project root in production builds (future automation).
 
 ### Cursor Pagination
 Use `?limit=20&cursor=...` pattern. Response includes `nextCursor` when more records exist. Cursor encodes JSON `{"id":"...","createdAt":"..."}` base64url. Stable ordering avoids duplicates / gaps.
@@ -150,11 +191,39 @@ Supply `Idempotency-Key` header (unique client generated). Successful mutating r
 Envelope: `{ code, message, details?, traceId }`. `code` drawn from catalog (e.g. `AUTH_INVALID_CREDENTIALS`, `RATE_LIMIT_EXCEEDED`, `WEBHOOK_CIRCUIT_OPEN`). Non-whitelisted exceptions are mapped to `INTERNAL_ERROR` while preserving `traceId`.
 
 ### Backups & Retention
-- Daily backup job (cron) executes `pg_dump` to configured path (future env). Maintains sliding retention window, deleting oldest beyond `BACKUP_RETENTION_DAYS`.
-- Retention cleanup purges: old audit logs (threshold), revoked API keys past grace, expired refresh & password reset tokens.
+Automated:
+- Daily cron (01:00) performs logical dump via `pg_dump` to `BACKUP_DIR` (default `./backups`).
+- Optional encryption: set `BACKUP_ENCRYPT_PASSPHRASE` -> file stored as `*.sql.enc` (OpenSSL AES-256-CBC PBKDF2).
+- Retention: Files older than `BACKUP_RETENTION_DAYS` deleted (both `.sql` and `.sql.enc`).
+
+Manual Backup (on-demand):
+```
+pnpm -F g5-core-api backup:run   # (placeholder single-run; cron covers prod)
+```
+
+Manual Restore:
+```
+pnpm -F g5-core-api backup:restore backup-2025-01-15-01-00-00.sql
+pnpm -F g5-core-api backup:restore backup-2025-01-15-01-00-00.sql.enc  # auto decrypt (passphrase required)
+```
+Operational Guidelines:
+- Always snapshot (cloud-level) or logical backup before destructive migrations.
+- Test restore quarterly in a disposable environment (verifies integrity + documentation accuracy).
+- Keep passphrase rotated and stored in secret manager separate from DB credentials.
+- Consider PITR (point-in-time recovery) via WAL archiving for RPO < 24h (future extension).
+
+Retention Cleanup Tasks:
+- Audit logs (beyond policy horizon) – scheduled job.
+- Revoked API keys beyond grace period.
+- Expired refresh & password reset tokens.
 
 ### Alerting
-Scheduled job inspects DLQ size & other health indicators; emits structured logs (future: integrate with external alerting).
+Scheduled job (per minute) evaluates:
+- DLQ size > `ALERT_DLQ_THRESHOLD`
+- Rolling 5-minute HTTP 5xx rate > `ALERT_ERROR_RATE_5M`
+- P95 / P99 latency above `ALERT_P95_LATENCY` / `ALERT_P99_LATENCY`
+- Database connectivity failure
+Alerts emit structured WARN logs `ALERT[<key>]` and (if configured) post to Slack webhook. Cooldown enforced via `ALERTS_COOLDOWN_SEC` to prevent noise.
 
 ### Rate Limiting
 Redis sliding window keyed per tenant. Exceeding threshold returns `429` with error code `RATE_LIMIT_EXCEEDED`. Possible extension: per-key + global + adaptive burst tokens.

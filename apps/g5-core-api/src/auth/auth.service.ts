@@ -33,6 +33,36 @@ export class AuthService {
     private jwt: JwtService,
   ) {}
 
+  private signingKeys: Array<{ kid: string; secret: string }> | null = null;
+  private getKeys() {
+    if (this.signingKeys) return this.signingKeys;
+    const raw = process.env.JWT_KEYS; // JSON array [{kid,secret,current?}]
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          this.signingKeys = parsed.filter(
+            (k) => k && typeof k.kid === 'string' && typeof k.secret === 'string',
+          );
+        }
+      } catch (_) {
+        // ignore parse error
+      }
+    }
+    if (!this.signingKeys || !this.signingKeys.length) {
+      // fallback single key
+      const single = process.env.JWT_SECRET || 'dev_jwt_secret';
+      this.signingKeys = [{ kid: 'primary', secret: single }];
+    }
+    return this.signingKeys;
+  }
+  private getCurrentKey() {
+    const keys = this.getKeys();
+    // prefer one with current flag
+    const current = keys.find((k: any) => k.current) || keys[0];
+    return current;
+  }
+
   async register(dto: RegisterDto) {
     const tenant = await this.tenants.findOne({ where: { slug: dto.tenantSlug } });
     if (!tenant) throw new UnauthorizedException('Tenant not found');
@@ -180,7 +210,12 @@ export class AuthService {
 
   private async issueTokens(user: User) {
     const payload = { sub: user.id, tenantId: user.tenantId, email: user.email };
-    const accessToken = await this.jwt.signAsync(payload, { expiresIn: '15m' });
+    const key = this.getCurrentKey();
+    const accessToken = await this.jwt.signAsync({ ...payload }, {
+      expiresIn: '15m',
+      secret: key.secret,
+      header: { kid: key.kid, alg: 'HS256' },
+    });
     // create refresh token random value
     const raw = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
