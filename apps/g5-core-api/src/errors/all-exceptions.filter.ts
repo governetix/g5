@@ -2,6 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from
 import { Request, Response } from 'express';
 import { ErrorCodes } from './error-codes';
 import { getTraceId } from '../common/correlation/correlation.provider';
+import { AppException } from './app-exception';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -15,7 +16,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let code = ErrorCodes.UNKNOWN;
     let details: string[] | undefined = undefined;
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof AppException) {
+      status = exception.getStatus();
+      const resp: any = exception.getResponse();
+      message = resp?.message || message;
+      code = resp?.code || exception.code || code;
+      if (resp?.details && Array.isArray(resp.details)) details = resp.details.map(String);
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const r = exception.getResponse();
       if (typeof r === 'string') {
@@ -45,9 +52,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       request.correlationId ||
       (request.headers['x-correlation-id'] as string | undefined) ||
       undefined;
-    const body: { code: ErrorCodes; message: string; details?: string[]; traceId?: string } = {
+    const body: {
+      success: false;
+      code: ErrorCodes;
+      message: string;
+      details?: string[];
+      traceId?: string;
+      status: number;
+    } = {
+      success: false,
       code,
       message,
+      status,
       ...(details ? { details } : {}),
       ...(traceId ? { traceId } : {}),
     }; // do not expose stack

@@ -16,6 +16,7 @@ import { HealthController } from './health.controller';
 import { getTraceId } from './common/correlation/correlation.provider';
 import { EntitiesModule } from './entities/entities.module';
 import { RolesGuard } from './common/guards/roles.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 import { ApiKeyAuthGuard } from './common/guards/api-key.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { AuditLogModule } from './audit/audit-log.module';
@@ -128,7 +129,8 @@ import { BullModule } from '@nestjs/bullmq';
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerExceptionGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+  { provide: APP_GUARD, useClass: RolesGuard },
+  { provide: APP_GUARD, useClass: PermissionsGuard },
     {
       provide: APP_GUARD,
       useClass: ApiKeyAuthGuard,

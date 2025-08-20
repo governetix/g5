@@ -187,8 +187,57 @@ Supply `Idempotency-Key` header (unique client generated). Successful mutating r
 ### Correlation IDs
 `X-Correlation-Id` client provided or generated UUID v4 per request. Propagated through AsyncLocalStorage; added to logs, error responses (`traceId`), and metrics labels.
 
+### RBAC & Permissions
+Roles: `OWNER`, `ADMIN`, `EDITOR`, `VIEWER`.
+
+Granular permission strings enable future panel fine-tuning:
+
+| Permission | Description | Roles (default) |
+|------------|-------------|-----------------|
+| tenant.read | View tenant metadata | ALL |
+| tenant.update | Update tenant settings | OWNER, ADMIN |
+| project.create | Create project | OWNER, ADMIN, EDITOR |
+| project.read | List / get projects | ALL |
+| project.update | Update project | OWNER, ADMIN, EDITOR |
+| project.delete | Delete project | OWNER, ADMIN |
+| theme.manage | Manage themes | OWNER, ADMIN, EDITOR |
+| apikey.manage | Create/rotate/revoke API keys | OWNER, ADMIN, EDITOR |
+| webhook.manage | CRUD webhooks & retries | OWNER, ADMIN, EDITOR |
+| membership.invite | Invite members | OWNER, ADMIN |
+| membership.read | List members | ALL |
+| membership.update | Change roles / revoke | OWNER, ADMIN |
+| audit.read | View audit log | ALL |
+| queue.dlq.read | Inspect DLQ | OWNER, ADMIN |
+| queue.dlq.retry | Replay DLQ items | OWNER, ADMIN |
+| metrics.read | View metrics endpoint (panel proxy) | ALL |
+| backup.restore | Trigger restore (danger) | OWNER |
+
+Implementation:
+1. `@Permissions(...perms)` decorator sets metadata.
+2. `PermissionsGuard` resolves user role via membership and validates **all** required permissions (logical AND; supply multiple for composite constraints).
+3. `RolesGuard` still allows coarse constraints; both run (roles first). OWNER short‑circuits success.
+4. Matrix defined in `common/auth/permissions.ts`.
+
+Override Strategy: Future dynamic editing can source from DB; keep file as seed / fallback. A feature flag could switch guard to DB-backed resolver.
+
 ### Standardized Errors
-Envelope: `{ code, message, details?, traceId }`. `code` drawn from catalog (e.g. `AUTH_INVALID_CREDENTIALS`, `RATE_LIMIT_EXCEEDED`, `WEBHOOK_CIRCUIT_OPEN`). Non-whitelisted exceptions are mapped to `INTERNAL_ERROR` while preserving `traceId`.
+Envelope (final):
+```jsonc
+{
+	"success": false,
+	"status": 403,
+	"code": "ERR_FORBIDDEN",
+	"message": "Forbidden",
+	"details": ["optional", "validation issues"],
+	"traceId": "optional-correlation-id"
+}
+```
+Notes:
+- `success:false` uniform for easy front-end pattern matching.
+- `status` echoed for clients without access to raw HTTP layer (some SDK contexts).
+- Domain errors throw `AppException(code, message, status, details?)`.
+- Unknown exceptions map to `ERR_UNKNOWN` with generic message; stack never exposed.
+- Validation arrays collapse to `message: "Validation failed"` + `details`.
 
 ### Backups & Retention
 Automated:
