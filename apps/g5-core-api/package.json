@@ -29,11 +29,12 @@
     "check:migrations": "ts-node scripts/check-pending-migrations.ts",
     "gen:client": "pnpm gen:swagger && openapi-typescript openapi/openapi.json -o ../../packages/plugin-sdk/src/client/index.ts",
   "gen:client:direct": "openapi-typescript openapi/openapi.json -o ../../packages/plugin-sdk/src/client/index.ts",
-  "ci:gates": "pnpm lint && pnpm build && pnpm check:migrations && pnpm test:cov && pnpm artifacts:runtime || true && pnpm check:artifacts",
+  "ci:gates": "pnpm lint && pnpm build && pnpm check:migrations && pnpm test:cov && pnpm artifacts:runtime && pnpm check:artifacts && pnpm openapi:diff",
     "db:check": "ts-node scripts/db-redis-check.ts",
     "artifacts:all": "ts-node scripts/gen-artifacts.ts",
   "artifacts:runtime": "node scripts/gen-artifacts-runtime.js",
   "check:artifacts": "node scripts/check-artifacts.js",
+  "openapi:diff": "node scripts/openapi-diff-check.js",
     "db:reset": "powershell -NoProfile -Command \"docker compose down; docker volume rm g5_g5_pgdata -ErrorAction SilentlyContinue; docker volume rm g5_g5_pgdata_v2 -ErrorAction SilentlyContinue; docker compose up -d postgres redis\""
   },
   "dependencies": {

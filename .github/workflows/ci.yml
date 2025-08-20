@@ -8,6 +8,9 @@ on:
 
 jobs:
   build-test:
+    strategy:
+      matrix:
+        node: [20, 22]
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -37,7 +40,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: 'pnpm'
       - name: Install deps
         run: pnpm install --frozen-lockfile
@@ -51,9 +54,6 @@ jobs:
       - name: Check pending migrations
         run: pnpm -F g5-core-api exec ts-node scripts/check-pending-migrations.ts
         working-directory: apps/g5-core-api
-      - name: Generate artifacts (OpenAPI/Postman/client)
-        run: pnpm -F g5-core-api artifacts:runtime || true
-        working-directory: apps/g5-core-api
-      - name: Verify artifacts
-        run: pnpm -F g5-core-api check:artifacts
+      - name: CI Gates (lint/build/tests/migrations/artifacts/diff)
+        run: pnpm -F g5-core-api ci:gates
         working-directory: apps/g5-core-api
