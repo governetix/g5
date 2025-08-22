@@ -13,7 +13,7 @@ services:
       - g5_pgdata_v2:/var/lib/postgresql/data
 
   redis:
-    image: redis:7
+    image: redis:7.2-alpine
     container_name: g5_redis
     restart: unless-stopped
     ports:
@@ -38,6 +38,19 @@ services:
       - redis
     ports:
       - "3001:3001"
+
+  gadmin:
+    build:
+      context: .
+      dockerfile: apps/gadmin/Dockerfile
+    container_name: g5_admin
+    environment:
+      PORT: 3005
+      NEXT_PUBLIC_CORE_API_URL: http://api:3001/v1
+    depends_on:
+      - api
+    ports:
+      - "3005:3005"
 
 volumes:
   g5_pgdata_v2:

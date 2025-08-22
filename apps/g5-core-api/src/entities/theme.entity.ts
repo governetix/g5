@@ -3,10 +3,12 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
+  OneToMany,
   CreateDateColumn,
   UpdateDateColumn,
   Index,
   Unique,
+  JoinColumn,
 } from 'typeorm';
 import { Tenant } from './tenant.entity';
 
@@ -31,6 +33,13 @@ export class Theme {
 
   @Column({ default: false })
   isDefault: boolean;
+
+  @Column('uuid', { nullable: true })
+  activeSnapshotId?: string | null;
+
+  // activeSnapshot relation removed (resolve later with explicit entity registration) – use activeSnapshotId only for now
+
+  // snapshots relation removed temporarily
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

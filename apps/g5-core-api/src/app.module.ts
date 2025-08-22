@@ -33,6 +33,8 @@ import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
 import { AllExceptionsFilter } from './errors/all-exceptions.filter';
 import { TenantRateLimitGuard } from './common/rate-limit/tenant-rate.guard';
 import { BullModule } from '@nestjs/bullmq';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { QueueStubsModule } from './queues/queue-stubs.module';
 
 @Module({
   imports: [
@@ -61,8 +63,9 @@ import { BullModule } from '@nestjs/bullmq';
     EventsModule,
     MetricsModule,
     IdempotencyModule,
+  FeatureFlagsModule,
     ...(process.env.SKIP_QUEUES === 'true'
-      ? []
+      ? [QueueStubsModule]
       : [
           BullModule.forRootAsync({
             imports: [GConfigModule],

@@ -15,11 +15,11 @@ This directory hosts deep-dive technical docs for backend modules and how the Ad
 - Backups & Restore Runbook (`Backups.md`)
 - Alerting System (`Alerting.md`)
 - Queue & Jobs Architecture (`JobsQueues.md`)
+- Feature Flags (`FeatureFlags.md`)
 - SDK Generation & Client Integration (`SDK.md`)
 
 ## Next Candidates / Future Docs
-- Feature Flags & Configuration Strategy
-- Super-Admin Global Access Model
+- Super-Admin Global Access Model (expanded)
 - Data Retention & Purging Policies
 - Performance Tuning Playbook (Indexes, Query Plans)
 

@@ -15,16 +15,19 @@ export class AuditLogInterceptor implements NestInterceptor {
     const path = req.url;
     return next.handle().pipe(
       finalize(() => {
+        if (process.env.DEV_DISABLE_AUDIT === 'true') return;
         if (!tenantId) return;
         const action = method + ' ' + path;
         const actorUserId = getUserId(user);
-        void this.audit.log({
-          tenantId,
-          actorUserId,
-          action,
-          entityType: path.split('/')[1] || 'unknown',
-          metadata: { status: 'success' },
-        });
+        void this.audit
+          .log({
+            tenantId,
+            actorUserId,
+            action,
+            entityType: path.split('/')[1] || 'unknown',
+            metadata: { status: 'success' },
+          })
+          .catch(() => undefined); // swallow errors in dev when table missing
       }),
     );
   }

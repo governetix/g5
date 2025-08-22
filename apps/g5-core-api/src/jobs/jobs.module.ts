@@ -10,18 +10,37 @@ import { RefreshCleanupService } from './refresh-cleanup.service';
 import { BackupService } from '../backups/backup.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { RetentionCleanupService } from './retention-cleanup.service';
+import { QueuesController } from './queues.controller';
 import { MetricsModule } from '../metrics/metrics.module';
 import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
+    ...(process.env.SKIP_SCHEDULE === 'true' ? [] : [ScheduleModule.forRoot()]),
     TypeOrmModule.forFeature([RefreshToken, PasswordResetToken, Membership, AuditLog, ApiKey]),
     MetricsModule,
     ...(process.env.SKIP_QUEUES === 'true'
       ? []
       : [BullModule.registerQueue({ name: 'webhooks-dlq' })]),
   ],
-  providers: [RefreshCleanupService, BackupService, AlertsService, RetentionCleanupService],
+  controllers: [...(process.env.SKIP_QUEUES === 'true' ? [] : [QueuesController])],
+  providers: [
+    RefreshCleanupService,
+    BackupService,
+    AlertsService,
+    RetentionCleanupService,
+    ...(process.env.SKIP_QUEUES === 'true'
+      ? [
+          {
+            provide: 'BullQueue_webhooks-dlq',
+            useValue: {
+              add: async () => {},
+              getJob: async () => null,
+              // minimal interface methods used by AlertsService (extend if needed)
+            },
+          },
+        ]
+      : []),
+  ],
 })
 export class JobsModule {}

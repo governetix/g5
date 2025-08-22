@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Patch, Query, UsePipes } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ApiKeysService } from './api-keys.service';
@@ -9,6 +9,7 @@ import {
   ApiKeyMetadataUpdateDto,
 } from './dto/batch.dto';
 import { TenantId } from '../common/decorators/tenant.decorator';
+import { ListQuery, ListQueryPipe } from '../common/pagination/pagination.pipe';
 
 @ApiTags('api-keys')
 @Controller('api-keys')
@@ -22,18 +23,13 @@ export class ApiKeysController {
   }
 
   @Get()
-  list(
-    @TenantId() tenantId: string,
-    @Query('includeRevoked') includeRevoked?: string,
-    @Query('limit') limit?: string,
-    @Query('cursor') cursor?: string,
-    @Query('sort') sort?: string,
-  ) {
-    const pq =
-      limit || cursor || sort
-        ? { limit: limit ? parseInt(limit, 10) : undefined, cursor, sort }
-        : undefined;
-    return this.service.list(tenantId, includeRevoked === 'true', pq);
+  @UsePipes(new ListQueryPipe())
+  list(@TenantId() tenantId: string, @Query() q: ListQuery) {
+    const includeRevoked = q.filters.includeRevoked === true || q.filters.includeRevoked === 'true';
+    // Map ListQuery to existing service pagination (cursorless page-mode for now)
+    const sort = q.sort?.[0] ? `${q.sort[0].field}:${q.sort[0].direction}` : undefined;
+    const pq = { limit: q.limit, cursor: undefined, sort };
+    return this.service.list(tenantId, includeRevoked, pq);
   }
 
   @Roles('OWNER', 'ADMIN')

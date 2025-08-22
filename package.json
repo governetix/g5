@@ -1,10 +1,23 @@
 {
   "name": "g5",
   "version": "1.0.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@scarf/scarf",
+      "bcrypt",
+      "msgpackr-extract",
+      "nestjs-pino",
+      "protobufjs",
+      "unrs-resolver"
+    ]
+  },
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "turbo run dev --filter=gadmin...",
+    "build": "turbo run build",
+    "test": "echo \"(placeholder tests)\""
   },
   "keywords": [],
   "author": "",

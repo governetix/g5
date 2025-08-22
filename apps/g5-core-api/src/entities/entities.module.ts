@@ -10,6 +10,7 @@ import { Membership } from './membership.entity';
 import { ApiKey } from './apikey.entity';
 import { AuditLog } from './auditlog.entity';
 import { Theme } from './theme.entity';
+import { ThemeSnapshot } from './theme-snapshot.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { PasswordResetToken } from './password-reset-token.entity';
 import { Webhook } from './webhook.entity';
@@ -27,6 +28,7 @@ import { Webhook } from './webhook.entity';
       ApiKey,
       AuditLog,
       Theme,
+  ThemeSnapshot,
       RefreshToken,
       PasswordResetToken,
       Webhook,

@@ -29,11 +29,17 @@ Status: Implemented – Header + DB-scoped model.
 | 4 | PermissionsGuard | Fine-grain permissions |
 | 5 | ApiKeyAuth / etc | Auth variants |
 
-## Super-Admin (Future)
-Introduce a `platformRole=SUPERADMIN` claim:
-- Bypasses membership lookup.
-- Allows omitting `X-Tenant-Id` for cross-tenant listing endpoints (must be explicitly annotated to avoid accidental leakage).
-- All access audited with `targetTenantId` field.
+## Super-Admin (Implemented Basic Bypass)
+Control mediante variable de entorno `PLATFORM_SUPERADMINS` (emails separados por coma):
+- Si el email del usuario autenticado coincide, `TenantGuard` permite omitir `X-Tenant-Id` (contexto global) o usarlo sin requerir membership.
+- Con header ausente: pasa el guard, pero la mayoría de controladores actuales esperan tenant; endpoints globales se irán introduciendo (auditoría global, métricas, etc.).
+- Con header presente y sin membership: se asigna rol virtual `OWNER` y flags `request.isSuperAdmin=true`, `request.superAdminTenantOverride=<tenantId>`.
+- Auditoría: se recomienda registrar acciones super-admin destacando elevación (marcar en interceptores futuros).
+Limitaciones:
+- No hay aún endpoints que enumeren múltiples tenants con paginación para super-admin (pendiente de diseño UI).
+- Caching de permisos devuelve `{ role:null, permissions:[] }` sin header; al seleccionar tenant, recalcular.
+Seguridad:
+- Asegurar emails verificados; rotación requiere despliegue. Considerar mover a tabla de administración para edición runtime en el futuro.
 
 ## Panel Integration
 ### Context Switching

@@ -23,6 +23,10 @@ export class TenantGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<AppRequest>();
+    if (process.env.DEV_DISABLE_TENANT === 'true') {
+      // Dev mode: skip tenant validation entirely
+      return true;
+    }
     // Allow unauthenticated routes that don't require tenant (auth/register, auth/login, health, docs)
     const path: string = req.path || '';
     if (
@@ -33,20 +37,51 @@ export class TenantGuard implements CanActivate {
     ) {
       return true;
     }
-    const tenantId = req.headers['x-tenant-id'] as string | undefined;
+    const user = req.user;
+    const superAdmins = (process.env.PLATFORM_SUPERADMINS || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const isSuperAdmin = !!(user?.email && superAdmins.includes(user.email.toLowerCase()));
+    if (isSuperAdmin) {
+      // Super-admin can omit tenant header for cross-tenant operations; mark flags
+      (req as any).isSuperAdmin = true;
+      if (!req.headers['x-tenant-id']) {
+        // No tenant scope: skip tenant existence & membership checks
+        return true;
+      }
+    }
+    let tenantId = req.headers['x-tenant-id'] as string | undefined;
     if (!tenantId || tenantId.trim() === '') {
-      throw new BadRequestException('Missing X-Tenant-Id');
+      if (process.env.DEV_AUTO_TENANT === 'true') {
+        // Try to lookup or create a single dev tenant
+        const existing = await this.tenants.find({ take: 1 });
+        if (existing.length) {
+          tenantId = existing[0].id;
+          req.headers['x-tenant-id'] = tenantId;
+        } else {
+          const created = this.tenants.create({ name: 'Dev Tenant' });
+            await this.tenants.save(created);
+            tenantId = created.id;
+            req.headers['x-tenant-id'] = tenantId;
+        }
+      } else {
+        throw new BadRequestException('Missing X-Tenant-Id');
+      }
     }
     const tenant = await this.tenants.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Tenant not found');
-    // If request has apiKey user injected (viewer role) or real user, verify membership
-    // Skip membership check only for endpoints that create the first tenant? (Assuming tenant already exists here)
-    const user = req.user;
     if (user?.id) {
       const membership = await this.memberships.findOne({ where: { tenantId, userId: user.id } });
-      if (!membership) throw new ForbiddenException('No membership for tenant');
-      // Attach membership role for downstream guards
-      req.user!.role = membership.role;
+      if (!membership && !isSuperAdmin) throw new ForbiddenException('No membership for tenant');
+      if (membership) {
+        req.user!.role = membership.role;
+      }
+      if (isSuperAdmin && !membership) {
+        // Provide elevated OWNER-like role for scoped super-admin actions without stored membership
+        req.user!.role = 'OWNER' as any;
+        (req as any).superAdminTenantOverride = tenantId;
+      }
     }
     return true;
   }

@@ -16,6 +16,21 @@ Monorepo PNPM con apps y packages:
 - Idempotency & Rate Limiting: Redis sliding window + response cache por key.
 
 ## Arranque local
+### Opción Rápida (script unificado)
+```powershell
+pwsh ./scripts/dev-backend.ps1
+```
+Esto:
+- Levanta Postgres y Redis vía docker compose.
+- Instala dependencias (pnpm o npm).
+- Ejecuta migraciones (`migration:run` si existe script).
+- Arranca la API en modo watch (puerto 3001).
+
+Endpoints clave tras levantar:
+- Health: http://localhost:3001/health
+- Swagger JSON: http://localhost:3001/docs-json
+
+### Opción Manual
 ```powershell
 # Levantar infra
 docker compose up -d postgres redis
@@ -172,6 +187,34 @@ Incluye lint, build, migrations check, tests, cobertura, artefactos.
 - Puerto 55432: mapeado a 5432 dentro del contenedor.
 - Redis mínimo recomendado 6.2: usar imagen redis:7 para producción.
 - Artifacts script colgado: ahora instrumentado (ver `scripts/gen-artifacts-runtime.js`). Si tarda >2m revisar logs de arranque de Nest.
+
+## Frontend (gadmin) Quick Start
+Ubicación: `apps/gadmin`
+
+### Variables de entorno
+Archivo `apps/gadmin/.env.local` (creado):
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3001
+NEXT_PUBLIC_DEFAULT_TENANT_ID=00000000-0000-0000-0000-000000000000
+```
+Ajusta `NEXT_PUBLIC_DEFAULT_TENANT_ID` tras crear un tenant real (flujo por implementar UI).
+
+### Scripts
+```powershell
+pwsh ./scripts/dev-frontend.ps1         # Solo frontend
+pwsh ./scripts/dev-all.ps1              # Backend + frontend (2 procesos)
+```
+Frontend corre en http://localhost:3000 (API en 3001).
+
+### Flujos a Probar (Tema / Snapshots)
+1. Cargar página de tema en `/admin/theme`.
+2. Ver variables CSS aplicadas (inspeccionar `:root`).
+3. Modificar tokens (primary, background) y pulsar "Aplicar" -> estilos cambian en vivo.
+4. Guardar Snapshot -> nueva versión aparece en lista (timestamp/label incremental).
+5. Cambiar tokens de nuevo, crear segundo snapshot.
+6. Ejecutar rollback seleccionando snapshot inicial -> tokens vuelven y se crea snapshot nuevo (isRollback true en backend).
+7. Importar un snapshot local (JSON) y aplicarlo.
+8. Verificar contraste recalculado (foreground adaptado a primary).
 
 ## Licencia
 Privado.

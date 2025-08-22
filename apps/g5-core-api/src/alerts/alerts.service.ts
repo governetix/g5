@@ -47,7 +47,11 @@ export class AlertsService {
     } catch (e) {
       await this.emitAlert('db_down', 'Database down (SELECT 1 failed)');
     }
-    this.computeHttpErrorRateAndLatency();
+    try {
+      this.computeHttpErrorRateAndLatency();
+    } catch (e) {
+      this.logger.error('computeHttpErrorRateAndLatency failed', e as any);
+    }
   }
 
   private ensureConfig() {
@@ -61,10 +65,12 @@ export class AlertsService {
   }
 
   private computeHttpErrorRateAndLatency() {
-    const counter = this.metrics.httpRequestCounter;
-    const duration = this.metrics.httpDuration;
-    if (!counter || !duration) return;
-    const raw = (counter as any).get().values as Array<any>;
+    const counter = this.metrics.httpRequestCounter as any;
+    const duration = this.metrics.httpDuration as any;
+    if (!counter || typeof counter.get !== 'function') return;
+    const counterGet = counter.get();
+    if (!counterGet || !Array.isArray(counterGet.values)) return;
+    const raw = counterGet.values as Array<any>;
     let total = 0;
     let errors = 0;
     raw.forEach((v) => {
@@ -97,7 +103,10 @@ export class AlertsService {
     }
     // Approximate latency percentiles from histogram buckets
     try {
-      const hist = (duration as any).get().values as Array<any>; // buckets and sum,count
+      if (!duration || typeof duration.get !== 'function') return;
+      const durationGet = duration.get();
+      if (!durationGet || !Array.isArray(durationGet.values)) return;
+      const hist = durationGet.values as Array<any>; // buckets and sum,count
       const bucketRows = hist.filter((r) => r.metricName === 'http_request_duration_seconds_bucket');
       const counts = bucketRows.reduce<{ le: number; c: number }[]>((arr, r) => {
         const le = parseFloat(r.labels.le);

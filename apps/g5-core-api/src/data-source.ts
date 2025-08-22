@@ -11,6 +11,7 @@ import { Membership } from './entities/membership.entity';
 import { ApiKey } from './entities/apikey.entity';
 import { AuditLog } from './entities/auditlog.entity';
 import { Theme } from './entities/theme.entity';
+import { ThemeSnapshot } from './entities/theme-snapshot.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { Webhook } from './entities/webhook.entity';
@@ -49,11 +50,14 @@ export const AppDataSource = new DataSource({
     ApiKey,
     AuditLog,
     Theme,
+  ThemeSnapshot,
     RefreshToken,
     PasswordResetToken,
     Webhook,
   ],
   migrations: ['dist/src/migrations/*.js'],
-  synchronize: false,
-  logging: false,
+  // One-time schema sync (NOT for production). Set DB_SYNC_ONCE=true when starting the app
+  // to let TypeORM create missing tables/columns, then unset for subsequent runs.
+  synchronize: process.env.DB_SYNC_ONCE === 'true',
+  logging: process.env.DB_SYNC_ONCE === 'true' ? ['error','schema','warn'] : false,
 });

@@ -17,6 +17,7 @@ export class RefreshCleanupService {
 
   @Cron(CronExpression.EVERY_HOUR)
   async cleanup() {
+  if (process.env.DEV_DISABLE_JOBS === 'true') return;
     const now = new Date();
     const expiredRefresh = await this.refreshRepo.find({ where: { expiresAt: LessThan(now) } });
     if (expiredRefresh.length) {

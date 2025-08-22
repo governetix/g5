@@ -2,6 +2,51 @@
 
 Production-oriented multi-tenant SaaS core service built with NestJS. Focused on correctness, observability, security, and operational resilience.
 
+### Themes domain (plan)
+
+Database (PostgreSQL):
+- Table `themes`
+	- `id` UUID PK
+	- `name` text not null
+	- `slug` text unique not null
+	- `status` text check in ('draft','staging','canary','published','inactive') default 'draft'
+	- `is_default` boolean default false
+	- `wcag_score` text check in ('AAA','AA','A','') default ''
+	- `performance_score` integer
+	- `google_fonts` boolean default false
+	- `font_awesome` boolean default false
+	- `animate_css` boolean default false
+	- `hero_icons` boolean default false
+	- `version` integer default 1
+	- `tokens` jsonb not null  -- Design Tokens schema (palette, typography, layout, motion, etc.)
+	- `created_at` timestamptz default now()
+	- `updated_at` timestamptz default now()
+	- `updated_by` text
+
+- Table `theme_snapshots`
+	- `id` UUID PK
+	- `theme_id` UUID FK -> themes(id) on delete cascade
+	- `version` integer not null
+	- `label` text
+	- `tokens` jsonb not null
+	- `created_at` timestamptz default now()
+	- unique(theme_id, version)
+
+API Endpoints (prefix `/v1`):
+- `GET /themes` list themes
+- `POST /themes` create theme
+- `GET /themes/:id` get theme
+- `PATCH /themes/:id` update theme metadata/tokens
+- `DELETE /themes/:id` delete theme (if not published or with proper policy)
+- `POST /themes/:id/publish` transition workflow (draft→staging→canary→published)
+- `GET /themes/:id/snapshots` list snapshots
+- `POST /themes/:id/snapshots` create snapshot
+- `GET /themes/:id/css` generate CSS variables for client consumption
+
+Notes:
+- Health/docs/metrics remain unprefixed per current app config.
+- Tokens jsonb follows the `ThemeTokens` structure used in admin, enabling client-side CSS variables generation for consistent theming across modules.
+
 ### Feature Overview
 - Multi-tenancy via header `X-Tenant-Id` & per-entity `tenantId`
 - Auth: Access (short TTL) + rotating refresh tokens (stored hashed) + session listing & revocation
@@ -81,8 +126,12 @@ pnpm -F g5-core-api seed
 pnpm -F g5-core-api start:dev
 ```
 Docs: http://localhost:3001/docs  
-Health: http://localhost:3001/v1/health  
+Health: http://localhost:3001/health  
 Metrics: http://localhost:3001/metrics
+
+Admin Panel (Docker): http://localhost:3005/admin/status
+- Ejecuta checks contra el Core API (latencia, estado) y smoke endpoints.
+- Smoke endpoints: `/health/smoke/db`, `/health/smoke/redis`.
 
 ### Seeding
 Creates demo tenant, owner user, project, asset, and API key (printed once). Store printed key securely.

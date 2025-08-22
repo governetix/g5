@@ -1,3 +1,20 @@
+// Env loading (multi-path) kept minimal now that debug phase is over
+import * as fs from 'fs';
+import * as path from 'path';
+import * as dotenv from 'dotenv';
+const envLoaded: string[] = [];
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'), // current working dir
+  path.resolve(__dirname, '../../.env'), // dist/src -> ../../.env (project .env at app root)
+  path.resolve(__dirname, '../.env'),
+];
+for (const p of envCandidates) {
+  if (fs.existsSync(p)) {
+    const result = dotenv.config({ path: p });
+    if (!result.error) envLoaded.push(p);
+  }
+}
+if (envLoaded.length) console.log('[env] loaded:', envLoaded.join(', '));
 // OpenTelemetry bootstrap (conditional) must be first to patch modules
 if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_DISABLED !== 'true') {
   void import('./telemetry/otel.bootstrap').catch((e) =>
@@ -26,6 +43,13 @@ import { CorrelationMiddleware } from './common/correlation/correlation.middlewa
 import { z } from 'zod';
 
 async function bootstrap() {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[dev]', 'flags:', {
+      AUTH_OFF: process.env.DEV_DISABLE_AUTH,
+      TENANT_OFF: process.env.DEV_DISABLE_TENANT,
+      AUTO_THEME: process.env.DEV_AUTO_THEME,
+    });
+  }
   // Environment validation (subset critical for startup)
   const EnvSchema = z.object({
     DB_HOST: z.string().optional(),
@@ -78,12 +102,17 @@ async function bootstrap() {
   const cspDefault =
     process.env.CSP_DEFAULT ||
     "default-src 'self'; base-uri 'self'; font-src 'self' https: data:; form-action 'self'; frame-ancestors 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self' https: 'unsafe-inline'; upgrade-insecure-requests";
+  const baseDirectives = parseCspDirectives(cspDefault);
+  // Swagger UI requires inline scripts; relax only if docs are enabled
+  if (baseDirectives['script-src'] && !baseDirectives['script-src'].includes("'unsafe-inline'")) {
+    baseDirectives['script-src'] = [...baseDirectives['script-src'], "'unsafe-inline'", 'blob:'];
+  }
   const helmetOptions: HelmetOptions = {
     contentSecurityPolicy: process.env.DISABLE_CSP
       ? false
       : {
           useDefaults: false,
-          directives: parseCspDirectives(cspDefault),
+          directives: baseDirectives,
         },
     crossOriginOpenerPolicy: enableCOOP ? { policy: 'same-origin' } : false,
     crossOriginEmbedderPolicy: enableCOEP ? true : false,
@@ -143,9 +172,15 @@ async function bootstrap() {
 
   app.setGlobalPrefix('v1', { exclude: ['health', 'docs', 'metrics'] });
   const port = parseInt(process.env.PORT || '3001', 10);
+  // eslint-disable-next-line no-console
+  console.log('[bootstrap] listening on', port, 'syncOnce=', process.env.DB_SYNC_ONCE === 'true');
   await app.listen(port);
+  console.log('[ready]', { port });
 }
 void bootstrap();
+// Minimal global error logging retained
+process.on('uncaughtException', (e) => console.error('[uncaught]', e));
+process.on('unhandledRejection', (r) => console.error('[unhandled]', r));
 
 function parseCspDirectives(csp: string): Record<string, string[]> {
   const directives: Record<string, string[]> = {};

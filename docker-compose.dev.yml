@@ -1,0 +1,78 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    container_name: g5_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: g5_user
+      POSTGRES_PASSWORD: g5_pass
+      POSTGRES_DB: g5_db
+    ports:
+      - "55432:5432"
+    volumes:
+      - g5_pgdata_v2:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: g5_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  api:
+    container_name: g5_core_api
+    build:
+      context: .
+      dockerfile: apps/g5-core-api/Dockerfile
+      target: build
+    working_dir: /app
+    command: >-
+      sh -c "set -e; corepack enable; pnpm -F g5-core-api start:dev"
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: g5_user
+      DB_PASS: g5_pass
+      DB_NAME: g5_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: dev_jwt_secret_12345
+      NODE_ENV: development
+      CI: "true"
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app:cached
+      - /app/node_modules
+      - /app/apps/g5-core-api/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"http=require('http');http.get('http://localhost:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\" "]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  gadmin:
+    container_name: g5_admin
+    build:
+      context: .
+      dockerfile: apps/gadmin/Dockerfile
+      target: runner
+    working_dir: /app/apps/gadmin
+    restart: unless-stopped
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3001
+      CI: "true"
+    depends_on:
+      - api
+    ports:
+      - "3005:3005"
+    volumes: []
+
+volumes:
+  g5_pgdata_v2:

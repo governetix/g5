@@ -58,15 +58,18 @@ backup.restore       ✓     —      —     —
 - Pre-fetch permissions once post-login to hydrate client-side ACL cache.
 - Guard route navigation (e.g. DLQ page requires `queue.dlq.read`).
 
-### Suggested API Endpoint (to add)
-`GET /me/permissions` → returns:
+### Permissions Discovery Endpoint
+`GET /users/me/permissions` (implemented) returns:
 ```json
 {
   "role": "ADMIN",
-  "permissions": ["project.create","project.update", ...]
+  "permissions": ["project.create","project.update", "metrics.read", ...]
 }
 ```
-Compute server-side by expanding static matrix (or dynamic table in future). Cache for short TTL (e.g. 5m) keyed by user+tenant.
+Resolution:
+- Looks up membership for current `X-Tenant-Id` if role not already on request.
+- Returns empty list with `role: null` if no tenant scope (future super-admin path).
+Caching (recommended client-side): short TTL (e.g. 5m) keyed by user+tenant.
 
 ### Front-End Pattern
 ```ts
@@ -101,8 +104,14 @@ if (can('project.delete')) { /* render delete */ }
 - Permissions guard assumes validated tenant context; do not bypass `TenantGuard`.
 - For super-admin (cross-tenant) panel accounts, introduce a separate claim (e.g. `platformRole=SUPERADMIN`) and bypass membership lookup while retaining audit trail.
 
+### Super-Admin Considerations (Implemented Basic)
+Cuando `request.isSuperAdmin=true` y no se provee `X-Tenant-Id`, el endpoint `/users/me/permissions` retorna `{ role:null, permissions:[] }` (contexto global). Al seleccionar un tenant, el guard asigna rol virtual `OWNER` si no hay membership y se habilitan todos los permisos. Recomendaciones UI:
+- Banner persistente de modo super-admin.
+- Confirmaciones adicionales (modal) para operaciones destructivas.
+- Registro de acciones sensibles (rotate/revoke/backup) con marcaje de elevación.
+
 ## Pending Enhancements
-- Permissions discovery endpoint (as above)
 - Dynamic role editing API
-- Caching layer
-- Super-admin global scope
+- Caching layer (Redis) para memberships/permissions
+- Editor de permisos tenant-defined
+- Auditoría específica de denegaciones (sampling)
